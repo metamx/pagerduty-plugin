@@ -4,6 +4,8 @@ package org.jenkinsci.plugins.pagerduty;
  * Created by alexander on 9/15/15.
  */
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.squareup.pagerduty.incidents.NotifyResult;
 import com.squareup.pagerduty.incidents.PagerDuty;
 import com.squareup.pagerduty.incidents.Resolution;
@@ -11,21 +13,23 @@ import com.squareup.pagerduty.incidents.Trigger;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.Launcher;
-import hudson.model.*;
+import hudson.model.AbstractBuild;
+import hudson.model.AbstractProject;
+import hudson.model.BuildListener;
+import hudson.model.Result;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.Notifier;
 import hudson.tasks.Publisher;
-import jenkins.model.Jenkins;
-import org.kohsuke.stapler.DataBoundConstructor;
-
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.logging.Logger;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jenkins.model.Jenkins;
+import org.kohsuke.stapler.DataBoundConstructor;
 
 public class PagerDutyTrigger extends Notifier{
 
@@ -258,17 +262,32 @@ public class PagerDutyTrigger extends Notifier{
             hasIncidentKey = true;
         }
 
-        listener.getLogger().printf("Triggering pagerDuty with serviceKey %s%n", serviceK);
+        listener.getLogger().printf("Triggering pagerDuty with serviceKey: %s%n", serviceK);
 
         try {
             Trigger trigger;
-            listener.getLogger().printf("Triggering pagerDuty with incidentKey %s%n", incK);
-            listener.getLogger().printf("Triggering pagerDuty with incDescription %s%n", descr);
-            listener.getLogger().printf("Triggering pagerDuty with incDetails %s%n", details);
+            listener.getLogger().printf("Triggering pagerDuty with incidentKey: %s%n", incK);
+            listener.getLogger().printf("Triggering pagerDuty with incDescription: %s%n", descr);
+            listener.getLogger().printf("Triggering pagerDuty with incDetails: %s%n", details);
+
+            Trigger.Builder triggerBuilder = new Trigger.Builder(descr);
+            try {
+                listener.getLogger().printf("Trying to read the json format: %s%n", details);
+                GsonBuilder builder = new GsonBuilder();
+                Gson gson = builder.create();
+                Map<String, String> detailsMap = gson.fromJson(details, Map.class);
+                triggerBuilder.addDetails(detailsMap);
+            } catch (Exception e){
+                listener.getLogger().printf("Error: %s%n", e.getMessage());
+                if (details != null) {
+                    triggerBuilder.addDetails("Details", details);
+                }
+            }
+
             if (hasIncidentKey) {
-                trigger = new Trigger.Builder(descr).addDetails("Details", details).withIncidentKey(incK).build();
+                trigger = triggerBuilder.withIncidentKey(incK).build();
             } else {
-                trigger = new Trigger.Builder(descr).addDetails("Details", details).build();
+                trigger = triggerBuilder.build();
             }
 
             NotifyResult result = pagerDuty.notify(trigger);
